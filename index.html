@@ -52,6 +52,18 @@ input[type=range]{width:46%}
 #chart i{flex:1;min-width:3px;border-radius:3px 3px 0 0;background:var(--ok)}
 #chart i.x{background:var(--bad)}
 #err{color:var(--bad)}
+@media (orientation:landscape){
+  #cue svg{width:min(44vw,70vh)}
+  #msg{top:50%;transform:translateY(-50%);pointer-events:none}
+  #msg .big{font-size:clamp(2.2rem,12vh,4.5rem)}
+  #hud{padding-top:calc(env(safe-area-inset-top,0px) + 6px)}
+  .chip{padding:5px 10px}
+  #bar{left:auto;top:0;bottom:0;width:auto;flex-direction:column;justify-content:center;padding:10px max(16px,env(safe-area-inset-right,0px)) 10px 12px;background:linear-gradient(90deg,#0000,#000c)}
+  #bar button{flex:0 0 auto;min-height:44px;padding:10px 16px}
+  #hud{right:calc(max(16px,env(safe-area-inset-right,0px)) + 110px)}
+  #cue{right:110px}
+  .sheet{padding-top:calc(env(safe-area-inset-top,0px) + 10px)}
+}
 </style>
 </head>
 <body>

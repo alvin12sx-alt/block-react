@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Block React">
+<meta name="theme-color" content="#0b0f14">
+<title>Block React</title>
+<style>
+:root{--bg:#0b0f14;--panel:#141b24;--line:#243040;--fg:#eef2f6;--mute:#8a99ab;--cue:#ff5a1f;--ok:#37d67a;--bad:#ff3b5c;--warn:#ffc24a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--fg);font:16px/1.4 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;overflow:hidden;overscroll-behavior:none}
+button{font:inherit;color:inherit;border:0;border-radius:14px;padding:14px 18px;background:var(--panel);min-height:48px}
+button.primary{background:var(--cue);color:#fff;font-weight:700;font-size:1.15rem;letter-spacing:.02em}
+button:active{transform:scale(.97)}
+button:focus-visible{outline:3px solid var(--warn)}
+#stage{position:fixed;inset:0}
+video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1);background:#000}
+#heat{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:.55;mix-blend-mode:screen;transform:scaleX(-1)}
+#zones{position:absolute;inset:0;pointer-events:none;display:grid;grid-template-columns:1fr 1fr 1fr}
+#zones div{border-left:1px dashed rgba(255,255,255,.28)}#zones div:first-child{border-left:0}
+#cue{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+#cue svg{width:min(70vw,60vh);height:auto;filter:drop-shadow(0 6px 30px rgba(0,0,0,.6));display:none}
+#cue svg.on{display:block}
+#flash{position:absolute;inset:0;background:transparent;pointer-events:none;transition:background .25s}
+#hud{position:absolute;left:0;right:0;top:0;padding:calc(env(safe-area-inset-top,0px) + 10px) max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));display:flex;justify-content:space-between;gap:12px;background:linear-gradient(#000a,#0000);align-items:flex-start}
+.chip{background:#000a;border-radius:12px;padding:8px 12px;font-variant-numeric:tabular-nums;font-size:.9rem;color:var(--mute)}
+.chip b{color:var(--fg);font-size:1.1rem}
+#msg{position:absolute;left:0;right:0;top:22%;text-align:center;padding:0 24px}
+#msg .big{font-size:clamp(3rem,16vw,6rem);font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;text-shadow:0 4px 24px #000c}
+#msg .small{font-size:1.1rem;color:#fff;text-shadow:0 2px 12px #000}
+#bar{position:absolute;left:0;right:0;bottom:0;padding:12px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 14px) max(16px,env(safe-area-inset-left,0px));display:flex;gap:10px;background:linear-gradient(#0000,#000c)}
+#bar button{flex:1}
+#bar button.sm{flex:0 0 auto;padding:14px}
+.sheet{position:fixed;inset:0;background:var(--bg);z-index:5;overflow:auto;padding:calc(env(safe-area-inset-top,0px) + 16px) max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 24px) max(16px,env(safe-area-inset-left,0px));display:none}
+.sheet.on{display:block}
+.sheet h1{margin:0 0 4px;font-size:1.8rem;letter-spacing:-.02em}
+.sheet h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.1em;color:var(--mute);margin:24px 0 8px}
+.sheet p{color:var(--mute);margin:.3em 0;max-width:60ch}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.row label{flex:1}.row small{display:block;color:var(--mute)}
+.seg{display:flex;background:var(--panel);border-radius:12px;padding:3px}
+.seg button{min-height:40px;padding:8px 14px;background:transparent;border-radius:10px;color:var(--mute)}
+.seg button.on{background:var(--line);color:var(--fg)}
+input[type=range]{width:46%}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--panel);border-radius:14px;padding:12px}
+.stat span{display:block;color:var(--mute);font-size:.8rem}.stat b{font-size:1.5rem;font-variant-numeric:tabular-nums}
+#chart{display:flex;align-items:flex-end;gap:3px;height:120px;background:var(--panel);border-radius:14px;padding:10px}
+#chart i{flex:1;min-width:3px;border-radius:3px 3px 0 0;background:var(--ok)}
+#chart i.x{background:var(--bad)}
+#err{color:var(--bad)}
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="vid" playsinline muted autoplay></video>
+  <canvas id="heat" width="80" height="60"></canvas>
+  <div id="zones"><div></div><div></div><div></div></div>
+  <div id="flash"></div>
+  <div id="cue">
+    <svg id="aL" viewBox="0 0 100 100"><path d="M60 12 20 50l40 38V66h26V34H60z" fill="var(--cue)" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>
+    <svg id="aR" viewBox="0 0 100 100"><path d="M40 12 80 50 40 88V66H14V34h26z" fill="var(--cue)" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>
+    <svg id="aM" viewBox="0 0 100 100"><path d="M12 60 50 20l38 40H66v26H34V60z" fill="var(--cue)" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>
+  </div>
+  <div id="msg"><div class="big" id="big"></div><div class="small" id="small"></div></div>
+  <div id="hud">
+    <div class="chip">Rep <b id="hRep">0</b>/<span id="hOf">10</span></div>
+    <div class="chip">Avg <b id="hAvg">–</b> · Best <b id="hBest">–</b></div>
+  </div>
+  <div id="bar">
+    <button class="sm" id="bSet" aria-label="Settings">⚙︎</button>
+    <button class="primary" id="bGo">Start</button>
+    <button class="sm" id="bStat" aria-label="Stats">▥</button>
+  </div>
+</div>
+
+<div class="sheet" id="setSheet">
+  <h1>Settings</h1><p>Prop the phone on the ground or a chair about 2–3 m in front of you, facing you. You want to see your whole body. Stand in the middle third.</p>
+  <h2>Round</h2>
+  <div class="row"><label>Reps per set</label><div class="seg" data-k="reps"><button data-v="5">5</button><button data-v="10">10</button><button data-v="20">20</button><button data-v="0">∞</button></div></div>
+  <div class="row"><label>Wait before cue<small>random between</small></label><div class="seg" data-k="wait"><button data-v="s">1–2 s</button><button data-v="m">1.5–3.5 s</button><button data-v="l">2–5 s</button></div></div>
+  <div class="row"><label>Decoy mode<small>flashes a fake arrow first. Don't bite.</small></label><div class="seg" data-k="decoy"><button data-v="0">Off</button><button data-v="1">On</button></div></div>
+  <div class="row"><label>Middle means<small>what you do on ↑</small></label><div class="seg" data-k="mid"><button data-v="jump">Jump / stay</button><button data-v="off">Skip middle</button></div></div>
+  <h2>Camera</h2>
+  <div class="row"><label>Camera</label><div class="seg" data-k="cam"><button data-v="user">Front</button><button data-v="environment">Rear</button></div></div>
+  <div class="row"><label>Motion sensitivity<small id="sensV"></small></label><input type="range" id="sens" min="1" max="10"></div>
+  <div class="row"><label>Direction sensitivity<small>lower catches smaller steps</small></label><input type="range" id="dirs" min="1" max="10"></div>
+  <div class="row"><label>Sound cue</label><div class="seg" data-k="sound"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
+  <div class="row"><label>Show motion overlay</label><div class="seg" data-k="heat"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
+  <p id="err"></p>
+  <div style="margin-top:20px"><button class="primary" style="width:100%" id="setDone">Done</button></div>
+</div>
+
+<div class="sheet" id="statSheet">
+  <h1>Stats</h1><p id="sCount"></p>
+  <h2>All time</h2>
+  <div class="grid"><div class="stat"><span>Average</span><b id="sAvg">–</b></div><div class="stat"><span>Best</span><b id="sBest">–</b></div><div class="stat"><span>Correct</span><b id="sAcc">–</b></div></div>
+  <h2>By direction</h2>
+  <div class="grid"><div class="stat"><span>← Left</span><b id="sL">–</b></div><div class="stat"><span>↑ Middle</span><b id="sM">–</b></div><div class="stat"><span>→ Right</span><b id="sR">–</b></div></div>
+  <h2>Last 40 reps <span style="text-transform:none;letter-spacing:0">(red = wrong or missed)</span></h2>
+  <div id="chart"></div>
+  <p id="sTip"></p>
+  <div style="display:flex;gap:10px;margin-top:24px"><button style="flex:1" id="sClear">Clear history</button><button class="primary" style="flex:1" id="sDone">Back</button></div>
+</div>
+
+<script>
+"use strict";
+const $=s=>document.querySelector(s);
+const W=80,H=60;
+const DEF={reps:'10',wait:'m',decoy:'0',mid:'jump',cam:'user',sens:5,dirs:5,sound:'1',heat:'1'};
+let cfg={...DEF};
+try{Object.assign(cfg,JSON.parse(localStorage.getItem('blockreact.cfg')||'{}'))}catch(e){}
+let hist=[];try{hist=JSON.parse(localStorage.getItem('blockreact.hist')||'[]')}catch(e){}
+const save=()=>{try{localStorage.setItem('blockreact.cfg',JSON.stringify(cfg));localStorage.setItem('blockreact.hist',JSON.stringify(hist.slice(-1000)))}catch(e){}};
+
+/* ---------- pure logic (tested) ---------- */
+// frames: [{t, mass, x}] x = motion centroid 0..1 (already mirrored to player's view). Returns 'L'|'M'|'R'.
+function classify(frames,minShift){
+  if(!frames.length)return 'M';
+  const t0=frames[0].t,tN=frames[frames.length-1].t,mid=t0+(tN-t0)/2;
+  const agg=f=>{let m=0,s=0;for(const q of f){m+=q.mass;s+=q.mass*q.x}return m?{m,x:s/m}:null};
+  const a=agg(frames.filter(f=>f.t<mid)),b=agg(frames.filter(f=>f.t>=mid));
+  const all=agg(frames);
+  let shift=0;
+  if(a&&b)shift=b.x-a.x;
+  // single burst case: use position relative to the middle of frame, weakly
+  const lean=all?(all.x-0.5)*0.5:0;
+  const d=shift+lean*0.6;
+  return d<-minShift?'L':d>minShift?'R':'M';
+}
+function thresholds(){
+  return {frac:0.045-cfg.sens*0.0036, shift:0.012+(10-cfg.dirs)*0.006};  // sens 1..10 => 0.041..0.009
+}
+if(typeof module!=='undefined')module.exports={classify};
+
+/* ---------- camera + motion ---------- */
+const vid=$('#vid'),heat=$('#heat'),hctx=heat.getContext('2d'),oc=document.createElement('canvas');oc.width=W;oc.height=H;
+const octx=oc.getContext('2d',{willReadFrequently:true});
+let stream=null,prev=null,lastVT=-1,frameCb=null;
+let onFrame=null; // set by round engine: (t,frac,cx,mass)
+async function startCam(){
+  if(stream)stream.getTracks().forEach(t=>t.stop());
+  $('#err').textContent='';
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:cfg.cam},width:{ideal:640},height:{ideal:480},frameRate:{ideal:60,min:30}}});
+    vid.srcObject=stream;await vid.play();prev=null;
+    pump();return true;
+  }catch(e){
+    $('#err').textContent='Camera blocked: '+e.name+'. This page needs https:// and camera permission (Settings > Safari > Camera).';
+    big('Camera off','Allow camera access, then tap Start');return false;
+  }
+}
+function pump(){
+  const step=(now)=>{
+    if(!stream)return;
+    if(vid.readyState>=2&&vid.currentTime!==lastVT){
+      lastVT=vid.currentTime;analyse(performance.now());
+    }
+    (vid.requestVideoFrameCallback?vid.requestVideoFrameCallback.bind(vid):requestAnimationFrame)(step);
+  };
+  requestAnimationFrame(step);
+}
+function analyse(t){
+  const vw=vid.videoWidth,vh=vid.videoHeight;if(!vw)return;
+  // crop source like object-fit:cover so zones match what the user sees
+  const er=innerWidth/innerHeight,vr=vw/vh;let sx=0,sy=0,sw=vw,sh=vh;
+  if(vr>er){sw=vh*er;sx=(vw-sw)/2}else{sh=vw/er;sy=(vh-sh)/2}
+  octx.drawImage(vid,sx,sy,sw,sh,0,0,W,H);
+  const d=octx.getImageData(0,0,W,H).data,n=W*H,g=new Uint8Array(n);
+  for(let i=0,j=0;j<n;i+=4,j++)g[j]=(d[i]*77+d[i+1]*150+d[i+2]*29)>>8;
+  let mass=0,sx2=0;
+  const hi=cfg.heat==='1'?hctx.createImageData(W,H):null;
+  if(prev){
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+      const k=y*W+x,df=Math.abs(g[k]-prev[k]);
+      if(df>24){mass++;sx2+=x;if(hi){const o=k*4;hi.data[o]=255;hi.data[o+1]=90;hi.data[o+2]=30;hi.data[o+3]=200}}
+    }
+  }
+  prev=g;
+  if(hi)hctx.putImageData(hi,0,0);else hctx.clearRect(0,0,W,H);
+  const frac=mass/n,cx=mass?(sx2/mass)/W:0.5;
+  // display is mirrored (selfie view): player's left = screen left => flip x of raw camera
+  if(onFrame)onFrame(t,frac,1-cx,mass);
+}
+
+/* ---------- audio ---------- */
+let ac=null;
+function beep(f=880,ms=120){
+  if(cfg.sound!=='1')return;
+  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+    const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=f;o.connect(g);g.connect(ac.destination);
+    g.gain.setValueAtTime(.35,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+ms/1000);
+    o.start();o.stop(ac.currentTime+ms/1000);}catch(e){}
+}
+
+/* ---------- UI helpers ---------- */
+const big=(a,b='')=>{$('#big').innerHTML=a;$('#small').innerHTML=b};
+const showArrow=d=>{for(const k of ['L','R','M'])$('#a'+k).classList.toggle('on',k===d)};
+const flash=c=>{$('#flash').style.background=c;setTimeout(()=>$('#flash').style.background='transparent',400)};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const WAIT={s:[1000,2000],m:[1500,3500],l:[2000,5000]};
+const NAME={L:'Left',M:'Middle',R:'Right'};
+
+/* ---------- round engine ---------- */
+let running=false,abort=false,setRTs=[],rep=0,wakeLock=null;
+async function playRound(){
+  const th=thresholds();
+  // 1. settle: need ~0.7 s of stillness
+  showArrow(null);big('Get set','stand still in the middle');
+  let still=0,lastT=0,stillOK=false;
+  await new Promise(res=>{
+    onFrame=(t,frac)=>{ if(abort){onFrame=null;return res()}
+      if(lastT){ if(frac<th.frac*0.6)still+=t-lastT;else still=0 } lastT=t;
+      if(still>700){onFrame=null;stillOK=true;res()} };
+  });
+  if(abort)return null;
+  // 2. wait random time; moving = false start
+  const [a,b]=WAIT[cfg.wait];const delay=a+Math.random()*(b-a);
+  big('Ready','');beep(440,80);
+  let early=false;
+  const start=performance.now();
+  onFrame=(t,frac)=>{ if(frac>th.frac*1.4)early=true };
+  while(performance.now()-start<delay&&!early&&!abort)await sleep(10);
+  if(abort){onFrame=null;return null}
+  if(early){onFrame=null;big('Too early','wait for the arrow');flash('#ffc24a55');await sleep(1200);return {early:true}}
+  // 3. choose cue
+  const dirs=cfg.mid==='off'?['L','R']:['L','M','R'];
+  const cue=dirs[Math.floor(Math.random()*dirs.length)];
+  let fooled=false;
+  if(cfg.decoy==='1'&&Math.random()<0.4){
+    const fakes=['L','M','R'].filter(d=>d!==cue&&(cfg.mid!=='off'||d!=='M'));
+    showArrow(fakes[Math.floor(Math.random()*fakes.length)]);
+    $('#cue').style.opacity='.35';big('','');
+    const st=performance.now();
+    onFrame=(t,frac)=>{ if(frac>th.frac*1.4)fooled=true };
+    await sleep(220);
+    $('#cue').style.opacity='1';
+    if(fooled){onFrame=null;showArrow(null);big('Fooled','that was a decoy');flash('#ff3b5c55');await sleep(1300);return {fooled:true}}
+  }
+  // 4. show cue, stamp time on paint
+  let cueT=0,onset=0,window_=[],done=false;
+  const result=new Promise(res=>{
+    onFrame=(t,frac,cx,mass)=>{
+      if(!cueT||t<cueT)return;
+      if(!onset){ if(frac>th.frac){onset=t;window_.push({t,mass,x:cx})} else if(t-cueT>2500){onFrame=null;res({miss:true})} }
+      else{ window_.push({t,mass,x:cx}); if(t-onset>420){onFrame=null;res({})} }
+    };
+  });
+  showArrow(cue);big('','');beep(cue==='L'?660:cue==='R'?990:820,140);
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  cueT=performance.now();
+  const r=await result;
+  if(abort)return null;
+  if(r.miss)return {cue,miss:true};
+  const dir=classify(window_,th.shift);
+  return {cue,dir,rt:Math.round(onset-cueT)};
+}
+async function runSet(){
+  running=true;abort=false;setRTs=[];rep=0;
+  $('#bGo').textContent='Stop';
+  const total=+cfg.reps;$('#hOf').textContent=total||'∞';
+  try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}
+  while(!abort&&(total===0||rep<total)){
+    const r=await playRound();
+    if(!r||abort)break;
+    if(r.early||r.fooled){hist.push({t:Date.now(),cue:r.cue||null,ok:false,rt:null,early:!!r.early,fooled:!!r.fooled});save();continue}
+    rep++;$('#hRep').textContent=rep;
+    if(r.miss){big('Miss','no movement seen');flash('#ff3b5c55');hist.push({t:Date.now(),cue:r.cue,ok:false,rt:null,miss:true})}
+    else{
+      const ok=r.dir===r.cue;
+      if(ok)setRTs.push(r.rt);
+      big(r.rt+'<span style="font-size:.4em"> ms</span>',ok?'Correct':'Went '+NAME[r.dir]+', cue was '+NAME[r.cue]);
+      $('#big').style.color=ok?'var(--ok)':'var(--bad)';flash(ok?'#37d67a44':'#ff3b5c55');
+      hist.push({t:Date.now(),cue:r.cue,dir:r.dir,ok,rt:r.rt});
+    }
+    save();updateHud();
+    await sleep(1400);$('#big').style.color='';
+  }
+  showArrow(null);onFrame=null;running=false;$('#bGo').textContent='Start';
+  try{wakeLock?.release()}catch(e){}
+  if(!abort&&setRTs.length){const avg=Math.round(setRTs.reduce((a,b)=>a+b)/setRTs.length);big(avg+'<span style="font-size:.4em"> ms</span>','Set average · best '+Math.min(...setRTs)+' ms')}
+  else if(!abort)big('Done','');
+}
+function updateHud(){
+  if(setRTs.length){$('#hAvg').textContent=Math.round(setRTs.reduce((a,b)=>a+b)/setRTs.length);$('#hBest').textContent=Math.min(...setRTs)}
+  else{$('#hAvg').textContent='–';$('#hBest').textContent='–'}
+}
+
+/* ---------- controls ---------- */
+$('#bGo').onclick=async()=>{
+  if(running){abort=true;return}
+  beep(1,1); // unlock audio on iOS
+  if(!stream&&!(await startCam()))return;
+  $('#hRep').textContent='0';updateHud();runSet();
+};
+const open=id=>$(id).classList.add('on'),close=id=>$(id).classList.remove('on');
+$('#bSet').onclick=()=>{open('#setSheet')};$('#setDone').onclick=()=>close('#setSheet');
+$('#bStat').onclick=()=>{renderStats();open('#statSheet')};$('#sDone').onclick=()=>close('#statSheet');
+$('#sClear').onclick=()=>{if($('#sClear').dataset.arm){hist=[];save();renderStats();$('#sClear').textContent='Clear history';delete $('#sClear').dataset.arm}else{$('#sClear').dataset.arm=1;$('#sClear').textContent='Tap again to confirm'}};
+document.querySelectorAll('.seg').forEach(seg=>{
+  const k=seg.dataset.k;
+  const paint=()=>seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===String(cfg[k])));
+  seg.onclick=async e=>{const b=e.target.closest('button');if(!b)return;cfg[k]=b.dataset.v;paint();save();
+    if(k==='cam'&&stream)await startCam(); if(k==='heat')heat.style.display=cfg.heat==='1'?'block':'none'};
+  paint();
+});
+function sensLabel(){$('#sensV').textContent='raise if it misses your moves, lower if it jumps early'}
+['sens','dirs'].forEach(id=>{const el=$('#'+id);el.value=cfg[id];el.oninput=()=>{cfg[id]=+el.value;save()}});
+sensLabel();heat.style.display=cfg.heat==='1'?'block':'none';
+
+/* ---------- stats ---------- */
+const avg=a=>a.length?Math.round(a.reduce((x,y)=>x+y)/a.length):null;
+const fmt=v=>v==null?'–':v+' ms';
+function renderStats(){
+  const reps=hist.filter(h=>!h.early&&!h.fooled),good=reps.filter(h=>h.ok&&h.rt!=null);
+  $('#sCount').textContent=reps.length+' reps recorded on this phone.';
+  $('#sAvg').textContent=fmt(avg(good.map(h=>h.rt)));
+  $('#sBest').textContent=fmt(good.length?Math.min(...good.map(h=>h.rt)):null);
+  $('#sAcc').textContent=reps.length?Math.round(100*good.length/reps.length)+'%':'–';
+  const by=d=>avg(good.filter(h=>h.cue===d).map(h=>h.rt));
+  $('#sL').textContent=fmt(by('L'));$('#sM').textContent=fmt(by('M'));$('#sR').textContent=fmt(by('R'));
+  const last=reps.slice(-40),mx=Math.max(600,...last.map(h=>h.rt||0));
+  $('#chart').innerHTML=last.map(h=>`<i class="${h.ok?'':'x'}" style="height:${h.rt?Math.max(6,h.rt/mx*100):100}%" title="${h.rt||'miss'}"></i>`).join('');
+  const a=by('L'),m=by('M'),r=by('R'),vals=[['left',a],['middle',m],['right',r]].filter(v=>v[1]);
+  if(vals.length>1){vals.sort((x,y)=>y[1]-x[1]);$('#sTip').textContent='Slowest direction: '+vals[0][0]+' ('+(vals[0][1]-vals[vals.length-1][1])+' ms behind your fastest). Drill it.'}
+  else $('#sTip').textContent='';
+}
+big('Block React','Prop the phone in front of you, tap Start');
+if(!(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia))$('#err').textContent='This browser cannot use the camera. Open the page in Safari over https://.';
+</script>
+</body>
+</html>

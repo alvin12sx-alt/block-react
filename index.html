@@ -52,6 +52,15 @@ input[type=range]{width:46%}
 #chart i{flex:1;min-width:3px;border-radius:3px 3px 0 0;background:var(--ok)}
 #chart i.x{background:var(--bad)}
 #err{color:var(--bad)}
+#skel{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;transform:scaleX(-1)}
+#jcard{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 84px);background:#000b;border-radius:16px;padding:12px;display:none;max-height:42%;overflow:auto;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}
+#jcard.on{display:block}
+#jcard .g{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+#jcard .stat{background:#ffffff14;padding:8px 10px}
+#jcard .stat b{font-size:1.2rem}
+#jcard ul{margin:10px 0 0;padding-left:18px;color:#fff;font-size:.92rem}
+#jcard li{margin:3px 0}
+input[type=number]{width:96px;font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;min-height:44px}
 @media (orientation:landscape){
   #cue svg{width:min(44vw,70vh)}
   #msg{top:50%;transform:translateY(-50%);pointer-events:none}
@@ -62,6 +71,7 @@ input[type=range]{width:46%}
   #bar button{flex:0 0 auto;min-height:44px;padding:10px 16px}
   #hud{right:calc(max(16px,env(safe-area-inset-right,0px)) + 110px)}
   #cue{right:110px}
+  #jcard{bottom:10px;right:calc(max(12px,env(safe-area-inset-right,0px)) + 110px);max-height:55%}
   .sheet{padding-top:calc(env(safe-area-inset-top,0px) + 10px)}
 }
 </style>
@@ -70,6 +80,7 @@ input[type=range]{width:46%}
 <div id="stage">
   <video id="vid" playsinline muted autoplay></video>
   <canvas id="heat" width="80" height="60"></canvas>
+  <canvas id="skel"></canvas>
   <div id="zones"><div></div><div></div><div></div></div>
   <div id="flash"></div>
   <div id="cue">
@@ -78,12 +89,14 @@ input[type=range]{width:46%}
     <svg id="aM" viewBox="0 0 100 100"><path d="M12 60 50 20l38 40H66v26H34V60z" fill="var(--cue)" stroke="#fff" stroke-width="3" stroke-linejoin="round"/></svg>
   </div>
   <div id="msg"><div class="big" id="big"></div><div class="small" id="small"></div></div>
+  <div id="jcard"></div>
   <div id="hud">
-    <div class="chip">Rep <b id="hRep">0</b>/<span id="hOf">10</span></div>
-    <div class="chip">Avg <b id="hAvg">–</b> · Best <b id="hBest">–</b></div>
+    <div class="chip" id="hL">Rep <b id="hRep">0</b>/<span id="hOf">10</span></div>
+    <div class="chip" id="hR">Avg <b id="hAvg">–</b> · Best <b id="hBest">–</b></div>
   </div>
   <div id="bar">
     <button class="sm" id="bSet" aria-label="Settings">⚙︎</button>
+    <button class="sm" id="bMode" aria-label="Switch mode">Jumps</button>
     <button class="primary" id="bGo">Start</button>
     <button class="sm" id="bStat" aria-label="Stats">▥</button>
   </div>
@@ -96,6 +109,11 @@ input[type=range]{width:46%}
   <div class="row"><label>Wait before cue<small>random between</small></label><div class="seg" data-k="wait"><button data-v="s">1–2 s</button><button data-v="m">1.5–3.5 s</button><button data-v="l">2–5 s</button></div></div>
   <div class="row"><label>Decoy mode<small>flashes a fake arrow first. Don't bite.</small></label><div class="seg" data-k="decoy"><button data-v="0">Off</button><button data-v="1">On</button></div></div>
   <div class="row"><label>Middle means<small>what you do on ↑</small></label><div class="seg" data-k="mid"><button data-v="jump">Jump / stay</button><button data-v="off">Skip middle</button></div></div>
+  <h2>Body tracking</h2>
+  <div class="row"><label>Tracking<small>Body follows your hips and shoulders. Motion is the simple fallback.</small></label><div class="seg" data-k="track"><button data-v="body">Body</button><button data-v="motion">Motion</button></div></div>
+  <div class="row"><label>Your height<small>cm. Used to turn jumps into real cm</small></label><input type="number" id="ht" min="120" max="230" inputmode="numeric"></div>
+  <div class="row"><label>Hitting arm<small>Jumps mode</small></label><div class="seg" data-k="arm"><button data-v="auto">Auto</button><button data-v="right">Right</button><button data-v="left">Left</button></div></div>
+  <p>Jumps mode: put the phone 3–4 m away, side-on to you, and keep your whole body plus raised arms in view. Stand tall and still for 2 s to calibrate, then jump and swing.</p>
   <h2>Camera</h2>
   <div class="row"><label>Camera</label><div class="seg" data-k="cam"><button data-v="user">Front</button><button data-v="environment">Rear</button></div></div>
   <div class="row"><label>Motion sensitivity<small id="sensV"></small></label><input type="range" id="sens" min="1" max="10"></div>
@@ -112,21 +130,26 @@ input[type=range]{width:46%}
   <div class="grid"><div class="stat"><span>Average</span><b id="sAvg">–</b></div><div class="stat"><span>Best</span><b id="sBest">–</b></div><div class="stat"><span>Correct</span><b id="sAcc">–</b></div></div>
   <h2>By direction</h2>
   <div class="grid"><div class="stat"><span>← Left</span><b id="sL">–</b></div><div class="stat"><span>↑ Middle</span><b id="sM">–</b></div><div class="stat"><span>→ Right</span><b id="sR">–</b></div></div>
+  <h2>Jumps</h2>
+  <div class="grid"><div class="stat"><span>Best jump</span><b id="jBest">–</b></div><div class="stat"><span>Average</span><b id="jAvg">–</b></div><div class="stat"><span>Fastest swing</span><b id="jSpd">–</b></div></div>
+  <div id="jchart" style="margin-top:8px"></div>
   <h2>Last 40 reps <span style="text-transform:none;letter-spacing:0">(red = wrong or missed)</span></h2>
   <div id="chart"></div>
   <p id="sTip"></p>
   <div style="display:flex;gap:10px;margin-top:24px"><button style="flex:1" id="sClear">Clear history</button><button class="primary" style="flex:1" id="sDone">Back</button></div>
 </div>
 
+<script src="logic.js"></script>
 <script>
 "use strict";
 const $=s=>document.querySelector(s);
 const W=80,H=60;
-const DEF={reps:'10',wait:'m',decoy:'0',mid:'jump',cam:'user',sens:5,dirs:5,sound:'1',heat:'1'};
+const DEF={reps:'10',wait:'m',decoy:'0',mid:'jump',cam:'user',sens:5,dirs:5,sound:'1',heat:'1',track:'body',arm:'auto',height:175};
 let cfg={...DEF};
 try{Object.assign(cfg,JSON.parse(localStorage.getItem('blockreact.cfg')||'{}'))}catch(e){}
 let hist=[];try{hist=JSON.parse(localStorage.getItem('blockreact.hist')||'[]')}catch(e){}
-const save=()=>{try{localStorage.setItem('blockreact.cfg',JSON.stringify(cfg));localStorage.setItem('blockreact.hist',JSON.stringify(hist.slice(-1000)))}catch(e){}};
+let jumps=[];try{jumps=JSON.parse(localStorage.getItem('blockreact.jumps')||'[]')}catch(e){}
+const save=()=>{try{localStorage.setItem('blockreact.cfg',JSON.stringify(cfg));localStorage.setItem('blockreact.hist',JSON.stringify(hist.slice(-1000)));localStorage.setItem('blockreact.jumps',JSON.stringify(jumps.slice(-500)))}catch(e){}};
 
 /* ---------- pure logic (tested) ---------- */
 // frames: [{t, mass, x}] x = motion centroid 0..1 (already mirrored to player's view). Returns 'L'|'M'|'R'.
@@ -166,10 +189,12 @@ async function startCam(){
   }
 }
 function pump(){
-  const step=(now)=>{
+  const step=()=>{
     if(!stream)return;
     if(vid.readyState>=2&&vid.currentTime!==lastVT){
-      lastVT=vid.currentTime;analyse(performance.now());
+      lastVT=vid.currentTime;
+      const t=performance.now(); // stamped before inference so model latency is not added to reaction time
+      if(bodyOn())runPose(t);else analyse(t);
     }
     (vid.requestVideoFrameCallback?vid.requestVideoFrameCallback.bind(vid):requestAnimationFrame)(step);
   };
@@ -198,6 +223,52 @@ function analyse(t){
   if(onFrame)onFrame(t,frac,1-cx,mass);
 }
 
+/* ---------- body tracking (MediaPipe pose, self-hosted) ---------- */
+let mode='drill',pose=null,poseState='idle',lastPoseT=0,lastBodyT=0,psamples=[],jumpHook=null;
+const skel=$('#skel'),sctx=skel.getContext('2d');
+const bodyOn=()=>poseState==='ready'&&(mode==='jump'||cfg.track==='body');
+async function ensurePose(){
+  if(poseState==='ready')return true;
+  if(poseState==='failed')return false;
+  if(poseState==='loading'){while(poseState==='loading')await sleep(100);return poseState==='ready'}
+  poseState='loading';big('Loading body tracker','first time takes a few seconds');
+  try{
+    const mod=await import('./vendor/vision_bundle.mjs');
+    const fs=await mod.FilesetResolver.forVisionTasks('./vendor/wasm');
+    const mk=d=>mod.PoseLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:'./vendor/pose_landmarker_lite.task',delegate:d},runningMode:'VIDEO',numPoses:1,minPoseDetectionConfidence:.5,minPosePresenceConfidence:.5,minTrackingConfidence:.5});
+    try{pose=await mk('GPU')}catch(e){pose=await mk('CPU')}
+    poseState='ready';
+  }catch(e){poseState='failed';$('#err').textContent='Body tracker failed to load: '+(e&&e.message||e);}
+  return poseState==='ready';
+}
+function sizeSkel(){const d=devicePixelRatio||1;skel.width=Math.round(innerWidth*d);skel.height=Math.round(innerHeight*d)}
+addEventListener('resize',sizeSkel);sizeSkel();
+const BONES=[[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28]];
+function drawSkel(raw){
+  sctx.clearRect(0,0,skel.width,skel.height);
+  if(!raw)return;
+  const cw=skel.width,ch=skel.height,vw=vid.videoWidth,vh=vid.videoHeight,sc=Math.max(cw/vw,ch/vh),ox=(cw-vw*sc)/2,oy=(ch-vh*sc)/2;
+  const X=p=>p.x*vw*sc+ox,Y=p=>p.y*vh*sc+oy;
+  sctx.lineWidth=Math.max(3,cw/180);sctx.lineCap='round';sctx.strokeStyle='#37d67a';sctx.fillStyle='#fff';
+  for(const [a,b] of BONES){const p=raw[a],q=raw[b];if(!p||!q||p.visibility<.4||q.visibility<.4)continue;sctx.beginPath();sctx.moveTo(X(p),Y(p));sctx.lineTo(X(q),Y(q));sctx.stroke()}
+  for(const i of [11,12,13,14,15,16,23,24,25,26,27,28]){const p=raw[i];if(!p||p.visibility<.4)continue;sctx.beginPath();sctx.arc(X(p),Y(p),sctx.lineWidth*.9,0,7);sctx.fill()}
+}
+function runPose(t){
+  if(t<=lastPoseT)t=lastPoseT+0.5;lastPoseT=t;
+  let res;try{res=pose.detectForVideo(vid,t)}catch(e){return}
+  const raw=res.landmarks&&res.landmarks[0];
+  drawSkel(raw);
+  hctx.clearRect(0,0,W,H);
+  if(!raw)return;
+  const asp=vid.videoWidth/vid.videoHeight;
+  // mirrored, isotropic coordinates: smaller x = player's left as seen on screen
+  const lm=raw.map(p=>({x:(1-p.x)*asp,y:p.y,visibility:p.visibility}));
+  lastBodyT=t;
+  if(mode==='jump'){jumpHook&&jumpHook(t,lm);return}
+  const b=BR.torso(lm);
+  if(b){psamples.push({t,cx:b.cx,cy:b.cy,S:b.S});while(psamples.length&&psamples[0].t<t-4000)psamples.shift()}
+}
+
 /* ---------- audio ---------- */
 let ac=null;
 function beep(f=880,ms=120){
@@ -218,7 +289,10 @@ const NAME={L:'Left',M:'Middle',R:'Right'};
 
 /* ---------- round engine ---------- */
 let running=false,abort=false,setRTs=[],rep=0,wakeLock=null;
-async function playRound(){
+const kSens=()=>1.4-0.08*cfg.sens;
+function pickCue(){const d=cfg.mid==='off'?['L','R']:['L','M','R'];return d[Math.floor(Math.random()*d.length)]}
+function pickFake(cue){const f=['L','M','R'].filter(d=>d!==cue&&(cfg.mid!=='off'||d!=='M'));return f[Math.floor(Math.random()*f.length)]}
+async function playRoundMotion(){
   const th=thresholds();
   // 1. settle: need ~0.7 s of stillness
   showArrow(null);big('Get set','stand still in the middle');
@@ -270,9 +344,51 @@ async function playRound(){
   const dir=classify(window_,th.shift);
   return {cue,dir,rt:Math.round(onset-cueT)};
 }
+
+async function playRoundBody(){
+  const k=kSens(),last=()=>psamples[psamples.length-1];
+  showArrow(null);big('Get set','stand still in the middle');
+  while(!abort){
+    const l=last();
+    if(!l||performance.now()-l.t>600)big('Step into view','show shoulders to feet');
+    else if(BR.isStill(psamples,l.t,700,0.08))break;
+    else big('Get set','stand still in the middle');
+    await sleep(30);
+  }
+  if(abort)return null;
+  const [a,b]=WAIT[cfg.wait],delay=a+Math.random()*(b-a);
+  big('Ready','');beep(440,80);
+  const start=performance.now();
+  while(performance.now()-start<delay&&!abort){
+    if(start+500<performance.now()&&BR.deviation(psamples,last().t)>0.14*k){big('Too early','wait for the arrow');flash('#ffc24a55');await sleep(1200);return {early:true}}
+    await sleep(10);
+  }
+  if(abort)return null;
+  const cue=pickCue();
+  if(cfg.decoy==='1'&&Math.random()<0.4){
+    showArrow(pickFake(cue));$('#cue').style.opacity='.35';big('','');
+    const st=performance.now();let fooled=false;
+    while(performance.now()-st<220){if(BR.deviation(psamples,last().t)>0.14*k)fooled=true;await sleep(8)}
+    $('#cue').style.opacity='1';
+    if(fooled){showArrow(null);big('Fooled','that was a decoy');flash('#ff3b5c55');await sleep(1300);return {fooled:true}}
+  }
+  showArrow(cue);big('','');beep(cue==='L'?660:cue==='R'?990:820,140);
+  await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  const cueT=performance.now();
+  while(!abort){
+    const st=BR.drillStatus(psamples,cueT,k);
+    if(st.state==='done')return {cue,dir:st.dir,rt:Math.round(st.onset-cueT)};
+    if(performance.now()-cueT>2500)return {cue,miss:true};
+    await sleep(8);
+  }
+  return null;
+}
+const playRound=()=>bodyOn()?playRoundBody():playRoundMotion();
 async function runSet(){
   running=true;abort=false;setRTs=[];rep=0;
   $('#bGo').textContent='Stop';
+  if(cfg.track==='body'&&!(await ensurePose())){cfg.track='motion';big('Using motion mode','body tracker did not load');await sleep(1500)}
+  psamples=[];
   const total=+cfg.reps;$('#hOf').textContent=total||'∞';
   try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}
   while(!abort&&(total===0||rep<total)){
@@ -297,8 +413,59 @@ async function runSet(){
   else if(!abort)big('Done','');
 }
 function updateHud(){
+  if(mode==='jump'){
+    $('#hRep').textContent=jumps.length;
+    const b=jumps.length?Math.max(...jumps.map(j=>j.jumpCm)):null;$('#hAvg').textContent=b==null?'–':b+' cm';return;
+  }
   if(setRTs.length){$('#hAvg').textContent=Math.round(setRTs.reduce((a,b)=>a+b)/setRTs.length);$('#hBest').textContent=Math.min(...setRTs)}
   else{$('#hAvg').textContent='–';$('#hBest').textContent='–'}
+}
+
+/* ---------- jumps + arm swing ---------- */
+const cmin=c=>c+' cm · '+Math.round(c/2.54)+' in';
+function jumpCard(m){
+  const t=(l,v)=>'<div class="stat"><span>'+l+'</span><b>'+v+'</b></div>';
+  let h='<div class="g">'+t('Jump',m.jumpCm+' cm')+t('Hang time',m.hangMs+' ms')+t('Hang height',m.hangCm+' cm');
+  if(m.swing)h+=t('Hand speed',m.speed+' m/s')+t('Contact height',m.contactCm+' cm')+t('Elbow at contact',m.elbow+'°');
+  h+='</div><ul>'+m.tips.map(x=>'<li>'+x+'</li>').join('')+'</ul>';
+  $('#jcard').innerHTML=h;$('#jcard').classList.add('on');
+}
+async function runJump(){
+  running=true;abort=false;$('#bGo').textContent='Stop';$('#jcard').classList.remove('on');
+  if(!(await ensurePose())){big('Needs body tracking','the tracker did not load. Check your connection and reload.');running=false;$('#bGo').textContent='Start';return}
+  const tr=BR.createJumpTracker({heightCm:+cfg.height||175,arm:cfg.arm});
+  let calT=performance.now();
+  big('Calibrating','stand tall, still, side-on, head to feet in view');
+  jumpHook=(t,lm)=>{
+    for(const e of tr.feed(t,lm)){
+      if(e.type==='calib-progress'){calT=performance.now();big('Hold still','calibrating…')}
+      else if(e.type==='calibrated'){beep(880,120);big('Ready','jump and swing');flash('#37d67a44')}
+      else if(e.type==='jump'){
+        const m=e.m;jumps.push({t:Date.now(),...m});save();updateHud();
+        big(m.jumpCm+'<span style="font-size:.4em"> cm</span>',cmin(m.jumpCm));
+        beep(m.swing&&m.tips.length===1&&m.tips[0].startsWith('Clean')?990:660,120);jumpCard(m);
+      }
+    }
+  };
+  try{wakeLock=await navigator.wakeLock?.request('screen')}catch(e){}
+  while(!abort){
+    if(tr.state==='calib'&&performance.now()-calT>1200)big('Step back','show your whole body, head to feet');
+    await sleep(150);
+  }
+  jumpHook=null;running=false;$('#bGo').textContent='Start';
+  try{wakeLock?.release()}catch(e){}
+  big('Jumps','Stopped. Tap Start to calibrate again.');
+}
+function setMode(m){
+  if(running){abort=true}
+  mode=m;$('#bMode').textContent=m==='jump'?'Drill':'Jumps';
+  $('#jcard').classList.remove('on');showArrow(null);
+  $('#hL').innerHTML=m==='jump'?'Jumps <b id="hRep">0</b>':'Rep <b id="hRep">0</b>/<span id="hOf">'+(+cfg.reps||'∞')+'</span>';
+  $('#hR').innerHTML=m==='jump'?'Best <b id="hAvg">–</b><b id="hBest" hidden></b>':'Avg <b id="hAvg">–</b> · Best <b id="hBest">–</b>';
+  heat.style.display=(m==='drill'&&cfg.heat==='1'&&!bodyOn())?'block':'none';
+  $('#zones').style.display=m==='jump'?'none':'grid';
+  updateHud();
+  big(m==='jump'?'Jumps':'Block React',m==='jump'?'Side-on, whole body in view. Tap Start, then stand still to calibrate':'Prop the phone in front of you, tap Start');
 }
 
 /* ---------- controls ---------- */
@@ -306,20 +473,23 @@ $('#bGo').onclick=async()=>{
   if(running){abort=true;return}
   beep(1,1); // unlock audio on iOS
   if(!stream&&!(await startCam()))return;
+  if(mode==='jump'){runJump();return}
   $('#hRep').textContent='0';updateHud();runSet();
 };
 const open=id=>$(id).classList.add('on'),close=id=>$(id).classList.remove('on');
+$('#bMode').onclick=()=>setMode(mode==='jump'?'drill':'jump');
 $('#bSet').onclick=()=>{open('#setSheet')};$('#setDone').onclick=()=>close('#setSheet');
 $('#bStat').onclick=()=>{renderStats();open('#statSheet')};$('#sDone').onclick=()=>close('#statSheet');
-$('#sClear').onclick=()=>{if($('#sClear').dataset.arm){hist=[];save();renderStats();$('#sClear').textContent='Clear history';delete $('#sClear').dataset.arm}else{$('#sClear').dataset.arm=1;$('#sClear').textContent='Tap again to confirm'}};
+$('#sClear').onclick=()=>{if($('#sClear').dataset.arm){hist=[];jumps=[];save();renderStats();$('#sClear').textContent='Clear history';delete $('#sClear').dataset.arm}else{$('#sClear').dataset.arm=1;$('#sClear').textContent='Tap again to confirm'}};
 document.querySelectorAll('.seg').forEach(seg=>{
   const k=seg.dataset.k;
   const paint=()=>seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===String(cfg[k])));
   seg.onclick=async e=>{const b=e.target.closest('button');if(!b)return;cfg[k]=b.dataset.v;paint();save();
-    if(k==='cam'&&stream)await startCam(); if(k==='heat')heat.style.display=cfg.heat==='1'?'block':'none'};
+    if(k==='cam'&&stream)await startCam(); if(k==='heat')heat.style.display=cfg.heat==='1'&&!bodyOn()?'block':'none'; if(k==='track'&&cfg.track==='body')ensurePose()};
   paint();
 });
 function sensLabel(){$('#sensV').textContent='raise if it misses your moves, lower if it jumps early'}
+{const ht=$('#ht');ht.value=cfg.height;ht.onchange=()=>{const v=Math.max(120,Math.min(230,+ht.value||175));cfg.height=v;ht.value=v;save()}}
 ['sens','dirs'].forEach(id=>{const el=$('#'+id);el.value=cfg[id];el.oninput=()=>{cfg[id]=+el.value;save()}});
 sensLabel();heat.style.display=cfg.heat==='1'?'block':'none';
 
@@ -336,6 +506,12 @@ function renderStats(){
   $('#sL').textContent=fmt(by('L'));$('#sM').textContent=fmt(by('M'));$('#sR').textContent=fmt(by('R'));
   const last=reps.slice(-40),mx=Math.max(600,...last.map(h=>h.rt||0));
   $('#chart').innerHTML=last.map(h=>`<i class="${h.ok?'':'x'}" style="height:${h.rt?Math.max(6,h.rt/mx*100):100}%" title="${h.rt||'miss'}"></i>`).join('');
+  const jh=jumps.map(j=>j.jumpCm),sp=jumps.filter(j=>j.swing).map(j=>j.speed);
+  $('#jBest').textContent=jh.length?Math.max(...jh)+' cm':'–';
+  $('#jAvg').textContent=jh.length?Math.round(jh.reduce((x,y)=>x+y)/jh.length)+' cm':'–';
+  $('#jSpd').textContent=sp.length?Math.max(...sp)+' m/s':'–';
+  const jl=jumps.slice(-40),jm=Math.max(60,...jl.map(j=>j.jumpCm));
+  $('#jchart').innerHTML='<div id="chart">'+jl.map(j=>'<i style="height:'+Math.max(6,j.jumpCm/jm*100)+'%" title="'+j.jumpCm+' cm"></i>').join('')+'</div>';
   const a=by('L'),m=by('M'),r=by('R'),vals=[['left',a],['middle',m],['right',r]].filter(v=>v[1]);
   if(vals.length>1){vals.sort((x,y)=>y[1]-x[1]);$('#sTip').textContent='Slowest direction: '+vals[0][0]+' ('+(vals[0][1]-vals[vals.length-1][1])+' ms behind your fastest). Drill it.'}
   else $('#sTip').textContent='';
